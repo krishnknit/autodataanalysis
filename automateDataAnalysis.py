@@ -12,7 +12,7 @@ from sqlalchemy import create_engine
 class AutomateDataAnalysis():
 	def __init__(self):
 		# excel file path
-		self.excelPath = '/home/krishna/dev_coding/python/flask/PROJECTS/'
+		self.excelPath = os.getcwd()
 		self.rowList   = []
 		
 		# credentials
@@ -32,20 +32,19 @@ class AutomateDataAnalysis():
 
 		# get all files under given path
 		files = [f for f in os.listdir(path) if os.path.isfile(os.path.join(path, f))]
-		#print files
+
 		for file in files:
 			if 'excel' in file:
 				try:
-					print "excel file '{}'' reading started...".format(file)
+					print "reading from excel file '{}' started...".format(file)
 					excelDF = pd.read_excel(os.path.join(path, file), sheetname = "Sheet1")
+					print "reading from excel file '{}' completed...".format(file)
 
 					# make database entry by using pandas
 					#self.makeDatabseEntryByPandas(excelDF)
 
-					#rowList = []
+					print "extracting fields from excel file '{}'...".format(file)
 					for index, row in excelDF.iterrows():
-						#print index
-						#print row['dt']
 						dt = str(row['dt'])[:10]
 						indx_nm = str(row['indx_nm'])
 						indx_val = row['indx_val']
@@ -54,10 +53,10 @@ class AutomateDataAnalysis():
 
 						self.rowList.append((dt, indx_nm, indx_val, create_ts, create_user_id))
 				except Exception as e:
-					print "Exception in reading the excel file {}, e: {}".format(file, e)
+					print "readExcel(), e: {}".format(e)
 
 
-	def runStoredProcedure(self):
+	def populateCDXDelta(self):
 		pass
 
 
@@ -66,20 +65,23 @@ class AutomateDataAnalysis():
 			mydb = create_engine('mssql+pymssql://' + self.username + ':' + self.password + '@' + self.hostname + ':' + str(self.port) + '/' + self.dbname , echo=False)
 			excelDF.to_sql(name="CDX", con=mydb, if_exists = 'append', index=False)
 		except Exception as e:
-			print "makeDatabseEntryByPandas(): e, {}".format(e)
+			print "makeDatabseEntryByPandas(), e: {}".format(e)
 		else:
 			mydb.close()
 
 
 	def makeDatabseEntry(self):
 		# get database connection, cursor
+		print "getting database connection ..."
 		con, cur = self.getConnection()
 
 		try:
+			#print "DATA:   ", self.rowList
+			print "inserting records to database ..."
 			cur.executemany("INSERT INTO CDX VALUES (%s, %s, %d, %s, %s)", self.rowList)
 			cur.execute("COMMIT")
 		except Exception as e:
-			print "error in databease e: {}".format(e)
+			print "makeDatabseEntry(), e: {}".format(e)
 		else:
 			# close database connection
 			con.close()
@@ -105,7 +107,7 @@ class AutomateDataAnalysis():
 		self.getArgument()
 		self.readExcel()
 		self.makeDatabseEntry()
-		self.runStoredProcedure()
+		self.populateCDXDelta()
 		etime = time.time()
 		ttime = etime - stime
 		
@@ -118,3 +120,4 @@ class AutomateDataAnalysis():
 if __name__ == '__main__':
 	ada = AutomateDataAnalysis()
 	ada.main()
+	# create table [dbo].[CDX_delta](bus_dt datetime NOT NULL, liq_period int NOT NULL, crt_nm char(10) NOT NULL, delta_value float NULL, PRIMARY KEY CLUSTERED(bus_dt ASC, liq_period ASC, crt_nm ASC) WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, IGNORE_DUP_KEY = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON) ON [DWA_DPA_DATA_D_FG_000])
