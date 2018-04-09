@@ -57,7 +57,8 @@ class AutomateDataAnalysis():
 
 
 	def populateCDXDelta(self):
-		pass
+		#need to get details from table CDX to run this stored procedure
+		cur.execute("EXEC p_populate_CDX_delta @bus_dt = '{}', @liq_period = {}, @look_back_period = {}".format(bus_dt, liq_period, look_back_period))
 
 
 	def makeDatabseEntryByPandas(self, excelDF):
@@ -88,11 +89,12 @@ class AutomateDataAnalysis():
 
 
 	def getConnection(self):
-		con = pymssql.connect(  self.hostname,
-								self.username,
-								self.password,
-								self.dbname,
-								self.port)
+		con = pymssql.connect(
+					self.hostname,
+					self.username,
+					self.password,
+					self.dbname,
+					self.port)
 
 		cursor = con.cursor()
 
@@ -101,7 +103,7 @@ class AutomateDataAnalysis():
 
 	def main(self):
 		print "********************************************************"
-		print "starting automate process..."
+		print "starting automate process ..."
 		print "********************************************************"
 		stime = time.time()
 		self.getArgument()
@@ -113,11 +115,11 @@ class AutomateDataAnalysis():
 		
 		print "********************************************************"
 		print "time consumed to complete the process: {}".format(ttime)
-		print "completing automate process..."
+		print "completing automate process ..."
 		print "********************************************************"
 
 
 if __name__ == '__main__':
 	ada = AutomateDataAnalysis()
 	ada.main()
-	# create table [dbo].[CDX_delta](bus_dt datetime NOT NULL, liq_period int NOT NULL, crt_nm char(10) NOT NULL, delta_value float NULL, PRIMARY KEY CLUSTERED(bus_dt ASC, liq_period ASC, crt_nm ASC) WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, IGNORE_DUP_KEY = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON) ON [DWA_DPA_DATA_D_FG_000])
+	
