@@ -6,6 +6,7 @@ import argparse
 import subprocess
 import numpy as np
 import pandas as pd
+from datetime import datetime, timedelta
 from sqlalchemy import create_engine
 
 
@@ -13,7 +14,13 @@ class AutomateDataAnalysis():
 	def __init__(self):
 		# excel file path
 		self.excelPath = os.getcwd()
+		self.date_format = "%Y-%m-%d"
+		self.days10yrs = 365 * 10
 		self.rowList   = []
+		self.existinprod = []
+		self.notexistinprod = []
+		self.datestatus = []
+		self.newdates = []
 		
 		# credentials
 		self.hostname = 'localhost'
@@ -58,7 +65,58 @@ class AutomateDataAnalysis():
 
 	def populateCDXDelta(self):
 		#need to get details from table CDX to run this stored procedure
-		cur.execute("EXEC p_populate_CDX_delta @bus_dt = '{}', @liq_period = {}, @look_back_period = {}".format(bus_dt, liq_period, look_back_period))
+		# cur.execute("EXEC p_populate_CDX_delta @bus_dt = '{}', @liq_period = {}, @look_back_period = {}".format(bus_dt, liq_period, look_back_period))
+
+		pass
+
+	def compareExcelDates(self):
+		print "comparing dates from excel file ..."
+		excelFile = os.path.join(os.getcwd(), 'compare_file.xlsx') 
+		#print "excelFile: ", excelFile
+		compDF = pd.read_excel(excelFile, sheetname = "Sheet1", dayfirst=True)
+
+		#print compDF.dtypes
+		#print compDF
+		
+		for index, row in compDF.iterrows():
+			# dateinprod scendatesgenera
+			if any(compDF.scendatesgenera == row['dateinprod']):
+				self.existinprod.append('Exists')
+				self.datestatus.append('NA')
+			else:
+				self.existinprod.append('Not Exists')
+				dt = str(row['dateinprod'])[:10]
+				now = str(datetime.now())[:10]
+				nowdate = datetime.strptime(now, self.date_format)
+				back10ydate = datetime.strptime(dt, self.date_format)
+				delta = nowdate - back10ydate
+				
+
+				if (delta.days > self.days10yrs):
+					self.datestatus.append('Legacy')
+				elif (delta.days <= self.days10yrs and delta.days > 0):
+					self.datestatus.append('Retired')
+				else:
+					self.datestatus.append('NA')
+
+			if any(compDF.dateinprod == row['scendatesgenera']):
+				self.notexistinprod.append('Exists')
+				self.newdates.append('NA')
+			else:
+				self.notexistinprod.append('Not Exists')
+				self.newdates.append('Newdate')
+
+		compDF['existinprod'] = self.existinprod
+		compDF['notexistinprod'] = self.notexistinprod
+		compDF['datestatus'] = self.datestatus
+		compDF['newdates'] = self.newdates
+
+		#print compDF
+		# write to excel file
+		writer = pd.ExcelWriter(excelFile, engine='xlsxwriter', date_format='mmm/dd/yyyy')
+		compDF.to_excel(writer, sheet_name='Sheet1', index=False)
+		writer.save()
+		print "dates comparision has completed ..."
 
 
 	def makeDatabseEntryByPandas(self, excelDF):
@@ -110,6 +168,7 @@ class AutomateDataAnalysis():
 		self.readExcel()
 		self.makeDatabseEntry()
 		self.populateCDXDelta()
+		self.compareExcelDates()
 		etime = time.time()
 		ttime = etime - stime
 		
