@@ -2,6 +2,7 @@
 import os
 import time
 import pymssql
+import logging
 import argparse
 import subprocess
 import numpy as np
@@ -10,9 +11,9 @@ from datetime import datetime, timedelta
 from sqlalchemy import create_engine
 
 
-class AutomateDataAnalysis():
+class AutomateDataAnalysis(object):
 	def __init__(self):
-		# excel file path
+		## excel file path
 		self.excelPath = os.getcwd()
 		self.date_format = "%Y-%m-%d"
 		self.days10yrs = 365 * 10
@@ -21,8 +22,10 @@ class AutomateDataAnalysis():
 		self.notexistinprod = []
 		self.datestatus = []
 		self.newdates = []
+		self.topRank = []
+		self.bottomRank = []
 		
-		# credentials
+		## credentials
 		self.hostname = 'localhost'
 		self.username = 'SA'
 		self.password = 'cybage@123'
@@ -34,23 +37,67 @@ class AutomateDataAnalysis():
 		pass
 
 
+	def generatePcIndxFile(self):
+		rspt = os.path.join(self.excelPath, 'myRScript.R')
+
+		## run R script to generate two excel file (pcfile & indexfile)
+		try:
+			subprocess.check_call(['Rscript', rspt], shell = False)
+		except Exception as e:
+			logging.error("generatePcIndxFile(): unable to run R script, e: {}".format(e))
+		
+
+	def generateCompareFile(self):
+		## create empty dataframe
+		self.df = pd.DataFrame()
+
+		## read from pcfile
+		self.readPcFile()
+
+		## read from database
+		self.getSecondColumn()
+
+
+	def readPcFile(self):
+		genPcFile = os.path.join(self.excelPath, 'april_pcfile.xlsx')
+		self.genPcDf = pd.read_excel(genPcFile, sheetname = "Sheet1")
+		
+		self.genPcDf.reset_index(inplace = True)
+		self.genPcDf.rename(columns = {"index": "date"}, inplace = True)
+
+		self.df['dateinprod'] = self.genPcDf['date']
+
+
+	def getSecondColumn(self):
+		## get database connection
+		con, cur = self.getConnection()
+
+		## Excute Query here
+		sql = "SELECT dt FROM CDX"
+		
+		try:
+			self.df['scendatesgenera'] = pd.read_sql(sql, con)
+		except Exception as e:
+			logging.error("getSecondColumn(), unable to read data, e: {}".format(e))
+
+
 	def readExcel(self):
 		path = self.excelPath
 
-		# get all files under given path
+		## get all files under given path
 		files = [f for f in os.listdir(path) if os.path.isfile(os.path.join(path, f))]
 
 		for file in files:
 			if 'excel' in file:
 				try:
-					print "reading from excel file '{}' started...".format(file)
+					logging.info("reading from excel file '{}' started...".format(file))
 					excelDF = pd.read_excel(os.path.join(path, file), sheetname = "Sheet1")
-					print "reading from excel file '{}' completed...".format(file)
+					logging.info("reading from excel file '{}' completed...".format(file))
 
-					# make database entry by using pandas
+					## make database entry by using pandas
 					#self.makeDatabseEntryByPandas(excelDF)
 
-					print "extracting fields from excel file '{}'...".format(file)
+					logging.info("extracting fields from excel file '{}'...".format(file))
 					for index, row in excelDF.iterrows():
 						dt = str(row['dt'])[:10]
 						indx_nm = str(row['indx_nm'])
@@ -60,27 +107,27 @@ class AutomateDataAnalysis():
 
 						self.rowList.append((dt, indx_nm, indx_val, create_ts, create_user_id))
 				except Exception as e:
-					print "readExcel(), e: {}".format(e)
+					logging.error("readExcel(), e: {}".format(e))
 
 
 	def populateCDXDelta(self):
-		#need to get details from table CDX to run this stored procedure
-		# cur.execute("EXEC p_populate_CDX_delta @bus_dt = '{}', @liq_period = {}, @look_back_period = {}".format(bus_dt, liq_period, look_back_period))
-
+		## need to get details from table CDX to run this stored procedure
+		# try:
+		# 	con, cur = self.getConnection()
+		# 	cur.execute("EXEC p_populate_CDX_delta @bus_dt = '{}', @liq_period = {}, @look_back_period = {}".format(bus_dt, liq_period, look_back_period))
+		# except Exception as e:
+		# 	logging.error("populateCDXDelta(): unable to populate CDX_delta table, e: {}".format(e))
 		pass
 
-	def compareExcelDates(self):
-		print "comparing dates from excel file ..."
-		excelFile = os.path.join(os.getcwd(), 'compare_file.xlsx') 
-		#print "excelFile: ", excelFile
-		compDF = pd.read_excel(excelFile, sheetname = "Sheet1", dayfirst=True)
 
-		#print compDF.dtypes
-		#print compDF
+	def compareExcelDates(self):
+		logging.info("comparing dates from excel file ...")
+		excelFile = os.path.join(os.getcwd(), 'compare_file.xlsx')
+		# compDF = pd.read_excel(excelFile, sheetname = "Sheet1", dayfirst=True)
 		
-		for index, row in compDF.iterrows():
-			# dateinprod scendatesgenera
-			if any(compDF.scendatesgenera == row['dateinprod']):
+		for index, row in self.df.iterrows():
+			## dateinprod scendatesgenera
+			if any(self.df.scendatesgenera == row['dateinprod']):
 				self.existinprod.append('Exists')
 				self.datestatus.append('NA')
 			else:
@@ -99,50 +146,102 @@ class AutomateDataAnalysis():
 				else:
 					self.datestatus.append('NA')
 
-			if any(compDF.dateinprod == row['scendatesgenera']):
+			if any(self.df.dateinprod == row['scendatesgenera']):
 				self.notexistinprod.append('Exists')
 				self.newdates.append('NA')
+				self.topRank.append('NA')
+				self.bottomRank.append('NA')
 			else:
 				self.notexistinprod.append('Not Exists')
 				self.newdates.append('Newdate')
 
-		compDF['existinprod'] = self.existinprod
-		compDF['notexistinprod'] = self.notexistinprod
-		compDF['datestatus'] = self.datestatus
-		compDF['newdates'] = self.newdates
+				## get rank for new date
+				rfrmTop, rfrmBottom = self.getRank(row['dateinprod'])
+				self.topRank.append(rfrmTop)
+				self.bottomRank.append(rfrmBottom)
 
-		#print compDF
-		# write to excel file
-		writer = pd.ExcelWriter(excelFile, engine='xlsxwriter', date_format='mmm/dd/yyyy')
-		compDF.to_excel(writer, sheet_name='Sheet1', index=False)
-		writer.save()
-		print "dates comparision has completed ..."
+		## format dateinprod & scendatesgenera
+		self.df['dateinprod'] = self.df['dateinprod'].dt.strftime('%m/%d/%Y')
+		self.df['scendatesgenera'] = self.df['scendatesgenera'].dt.strftime('%m/%d/%Y')
 
+		## update df with new fields
+		self.df['existinprod'] = self.existinprod
+		self.df['notexistinprod'] = self.notexistinprod
+		self.df['datestatus'] = self.datestatus
+		self.df['newdates'] = self.newdates
+		self.df['Rank from Top'] = self.topRank
+		self.df['Rank from Bottom'] = self.bottomRank
+
+		## write to excel file
+		try:
+			writer = pd.ExcelWriter(excelFile, engine='xlsxwriter', date_format='mmm/dd/yyyy')
+			self.df.to_excel(writer, sheet_name='Sheet1', index=False)
+			writer.save()
+		except Exception as e:
+			logging.error("compareExcelDates(): unable to write excel file, e: {}".format(e))
+		else:
+			logging.info("dates comparision has completed ...")
+
+
+	def readIndexFile(self):
+		genIndxFile = os.path.join(self.excelPath, 'april_indx_file.xlsx')
+		genIndxDf = pd.read_excel(genIndxFile, sheetname = "Sheet1", parse_dates=False, convert_float=False)
+		
+		genIndxDf.reset_index(inplace = True)
+		genIndxDf.rename(columns = {"index": "date"}, inplace = True)
+
+		return genIndxDf
+
+
+	def getRank(self, newDate):
+		## read index file
+		genIndxDf = self.readIndexFile()
+		newDate = str(newDate)[:10] 
+		try:
+			driSeries = genIndxDf.loc[genIndxDf['date'] == str(newDate), 'driver']
+			driver = driSeries.values[0]
+			self.genPcDf.sort_values(by=str(driver).lower(), inplace = True)
+		except Exception as e:
+			logging.error("getRank(), no date match e: {}".format(e))
+
+		dfLength = len(self.genPcDf.index)
+		rowNum = 0
+
+		for index, row in self.genPcDf.iterrows():
+			try:
+				rowNum += 1
+				if str(row['date'])[:10] == newDate:
+					rowNumTop = rowNum
+					rowNumBottom = "-{}".format(dfLength - rowNum + 1) 
+			
+					return rowNumTop, rowNumBottom
+			except Exception as e:
+				logging.error("getRank(), no rank found e: {}".format(e))
+		
 
 	def makeDatabseEntryByPandas(self, excelDF):
 		try:
 			mydb = create_engine('mssql+pymssql://' + self.username + ':' + self.password + '@' + self.hostname + ':' + str(self.port) + '/' + self.dbname , echo=False)
 			excelDF.to_sql(name="CDX", con=mydb, if_exists = 'append', index=False)
 		except Exception as e:
-			print "makeDatabseEntryByPandas(), e: {}".format(e)
+			logging.error("makeDatabseEntryByPandas(), e: {}".format(e))
 		else:
 			mydb.close()
 
 
 	def makeDatabseEntry(self):
-		# get database connection, cursor
-		print "getting database connection ..."
+		## get database connection, cursor
+		logging.info("getting database connection ...")
 		con, cur = self.getConnection()
 
 		try:
-			#print "DATA:   ", self.rowList
-			print "inserting records to database ..."
+			logging.info("inserting records to database ...")
 			cur.executemany("INSERT INTO CDX VALUES (%s, %s, %d, %s, %s)", self.rowList)
 			cur.execute("COMMIT")
 		except Exception as e:
-			print "makeDatabseEntry(), e: {}".format(e)
+			logging.error("makeDatabseEntry(), e: {}".format(e))
 		else:
-			# close database connection
+			## close database connection
 			con.close()
 
 
@@ -160,22 +259,27 @@ class AutomateDataAnalysis():
 
 
 	def main(self):
-		print "********************************************************"
-		print "starting automate process ..."
-		print "********************************************************"
+		logging.basicConfig(filename=os.path.join(os.getcwd(), 'automateDataAnalysis.log'),
+							format='%(asctime)s: %(levelname)s: %(message)s',
+							level=logging.DEBUG)
+
+		logging.info("********************************************************")
+		logging.info("starting automate process ...")
+		logging.info("********************************************************")
 		stime = time.time()
 		self.getArgument()
+		self.generatePcIndxFile()
 		self.readExcel()
 		self.makeDatabseEntry()
 		self.populateCDXDelta()
+		self.generateCompareFile()
 		self.compareExcelDates()
 		etime = time.time()
-		ttime = etime - stime
-		
-		print "********************************************************"
-		print "time consumed to complete the process: {}".format(ttime)
-		print "completing automate process ..."
-		print "********************************************************"
+		ttime = etime - stime		
+		logging.info("********************************************************")
+		logging.info("time consumed to complete the process: {}".format(ttime))
+		logging.info("completing automate process ...")
+		logging.info("********************************************************")
 
 
 if __name__ == '__main__':
