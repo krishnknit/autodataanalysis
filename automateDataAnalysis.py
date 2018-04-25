@@ -34,15 +34,56 @@ class AutomateDataAnalysis(object):
 
 
 	def getArgument(self):
-		pass
+		parser = argparse.ArgumentParser()
+
+		parser.add_argument('-f', '--from_date',
+							required=True,
+							dest='from_date',
+							help='Store from/start date')
+
+		parser.add_argument('-t', '--to_date',
+							required=True,
+							dest='to_date',
+							help='Store to/end date')
+
+		parser.add_argument('-v', '--version', 
+							action='version',
+							version='%(prog)s 1.0')
+
+		args = vars(parser.parse_args())
+
+		return args
+		#print args["from_date"]
+
+
+	def readExcelToMakeEntryInDB(self):
+		logging.info("reading from excel file '{}' started...".format(file))
+		try:			
+			#excelDF = pd.read_excel(os.path.join(path, file), sheetname = "Sheet1")
+			excelDF = pd.read_excel(os.path.join(self.excelPath, 'excel1.xlsx'), sheetname = "Sheet1")
+			logging.info("reading from excel file '{}' completed...".format(file))
+
+			## make database entry by using pandas
+			#self.makeDatabseEntryByPandas(excelDF)
+
+			logging.info("extracting fields from excel file '{}'...".format(file))
+			for index, row in excelDF.iterrows():
+				dt = str(row['dt'])[:10]
+				indx_nm = str(row['indx_nm'])
+				indx_val = row['indx_val']
+				create_ts = str(row['create_ts'])[:10]
+				create_user_id = str(row['create_user_id'])
+
+				self.rowList.append((dt, indx_nm, indx_val, create_ts, create_user_id))
+		except Exception as e:
+			logging.error("readExcelToMakeEntryInDB(), e: {}".format(e))
 
 
 	def generatePcIndxFile(self):
-		rspt = os.path.join(self.excelPath, 'myRScript.R')
+		rwrapper = os.path.join(self.excelPath, 'rscriptWrapper.py')
 
-		## run R script to generate two excel file (pcfile & indexfile)
 		try:
-			subprocess.check_call(['Rscript', rspt], shell = False)
+			subprocess.check_call(['python', rwrapper], shell = False)
 		except Exception as e:
 			logging.error("generatePcIndxFile(): unable to run R script, e: {}".format(e))
 		
@@ -51,79 +92,52 @@ class AutomateDataAnalysis(object):
 		## create empty dataframe
 		self.df = pd.DataFrame()
 
-		## read from pcfile
-		self.readPcFile()
-
 		## read from database
-		self.getSecondColumn()
+		self.getFirstColFrmDB()
+
+		## read from pcfile
+		self.getSecondColFrmPcFile()
 
 
-	def readPcFile(self):
+	def getSecondColFrmPcFile(self):
 		genPcFile = os.path.join(self.excelPath, 'april_pcfile.xlsx')
 		self.genPcDf = pd.read_excel(genPcFile, sheetname = "Sheet1")
 		
 		self.genPcDf.reset_index(inplace = True)
 		self.genPcDf.rename(columns = {"index": "date"}, inplace = True)
 
-		self.df['dateinprod'] = self.genPcDf['date']
+		self.df['scendatesgenera'] = self.genPcDf['date']
 
 
-	def getSecondColumn(self):
-		## get database connection
+	def getFirstColFrmDB(self):
+		## get database connection  
 		con, cur = self.getConnection()
 
 		## Excute Query here
 		sql = "SELECT dt FROM CDX"
 		
 		try:
-			self.df['scendatesgenera'] = pd.read_sql(sql, con)
+			self.df['dateinprod'] = pd.read_sql(sql, con)
 		except Exception as e:
-			logging.error("getSecondColumn(), unable to read data, e: {}".format(e))
+			logging.error("getFirstColFrmDB(), unable to read data, e: {}".format(e))
+		finally:
+			cur.close()
+			del cur
+			con.close()
 
 
-	def readExcel(self):
-		path = self.excelPath
-
-		## get all files under given path
-		files = [f for f in os.listdir(path) if os.path.isfile(os.path.join(path, f))]
-
-		for file in files:
-			if 'excel' in file:
-				try:
-					logging.info("reading from excel file '{}' started...".format(file))
-					excelDF = pd.read_excel(os.path.join(path, file), sheetname = "Sheet1")
-					logging.info("reading from excel file '{}' completed...".format(file))
-
-					## make database entry by using pandas
-					#self.makeDatabseEntryByPandas(excelDF)
-
-					logging.info("extracting fields from excel file '{}'...".format(file))
-					for index, row in excelDF.iterrows():
-						dt = str(row['dt'])[:10]
-						indx_nm = str(row['indx_nm'])
-						indx_val = row['indx_val']
-						create_ts = str(row['create_ts'])[:10]
-						create_user_id = str(row['create_user_id'])
-
-						self.rowList.append((dt, indx_nm, indx_val, create_ts, create_user_id))
-				except Exception as e:
-					logging.error("readExcel(), e: {}".format(e))
-
-
-	def populateCDXDelta(self):
-		## need to get details from table CDX to run this stored procedure
-		# try:
-		# 	con, cur = self.getConnection()
-		# 	cur.execute("EXEC p_populate_CDX_delta @bus_dt = '{}', @liq_period = {}, @look_back_period = {}".format(bus_dt, liq_period, look_back_period))
-		# except Exception as e:
-		# 	logging.error("populateCDXDelta(): unable to populate CDX_delta table, e: {}".format(e))
-		pass
-
+	def populateCDXDelta(self, from_date, to_date):
+		logging.info("inserting data to table CDX_delta from '{}' to '{}' ...".format(from_date, to_date))
+		try:
+			con, cur = self.getConnection()
+			cur.execute("EXEC dbo.p_populate_CDX_delta @dt_from = '{}', @dt_to = '{}'".format(from_date, to_date))
+		except Exception as e:
+			logging.error("populateCDXDelta(): unable to populate CDX_delta table, e: {}".format(e))
+		
 
 	def compareExcelDates(self):
 		logging.info("comparing dates from excel file ...")
 		excelFile = os.path.join(os.getcwd(), 'compare_file.xlsx')
-		# compDF = pd.read_excel(excelFile, sheetname = "Sheet1", dayfirst=True)
 		
 		for index, row in self.df.iterrows():
 			## dateinprod scendatesgenera
@@ -267,11 +281,13 @@ class AutomateDataAnalysis(object):
 		logging.info("starting automate process ...")
 		logging.info("********************************************************")
 		stime = time.time()
-		self.getArgument()
-		self.generatePcIndxFile()
-		self.readExcel()
+		args = self.getArgument()
+		self.readExcelToMakeEntryInDB()
 		self.makeDatabseEntry()
-		self.populateCDXDelta()
+		self.generatePcIndxFile()
+		if len(args) > 0:		
+			self.populateCDXDelta(args['from_date'], args['to_date'])
+		
 		self.generateCompareFile()
 		self.compareExcelDates()
 		etime = time.time()
