@@ -105,11 +105,19 @@ class AutomateDataAnalysis(object):
 
 
 	def populateCDXDelta(self):
-		firstDate, lastDate, back10firstDate, back10lastDate = self.getDates()
-		logging.info("inserting data to table CDX_delta from '{}' to '{}' ...".format(firstDate, lastDate))
+		## get dates
+		self.getDates()
+
+		## format dates
+		plastDate = self.lastDate.strftime("%m-%d-%Y")
+		pfirstDate = self.firstDate.strftime("%m-%d-%Y")
+		pback10lastDate = self.back10lastDate.strftime("%m-%d-%Y")
+		pback10firstDate = self.back10firstDate.strftime("%m-%d-%Y")
+
+		logging.info("inserting data to table CDX_delta from '{}' to '{}' ...".format(pfirstDate, plastDate))
 		try:
 			con, cur = self.getConnection()
-			cur.execute("EXEC dbo.p_populate_CDX_delta @dt_from = '{}', @dt_to = '{}'".format(firstDate, lastDate))
+			cur.execute("EXEC dbo.p_populate_CDX_delta @dt_from = '{}', @dt_to = '{}'".format(pfirstDate, plastDate))
 		except Exception as e:
 			logging.error("populateCDXDelta(): unable to populate CDX_delta table, e: {}".format(e))
 		
@@ -118,27 +126,21 @@ class AutomateDataAnalysis(object):
 		today = datetime.date.today()
 		#today = datetime.now()
 		fstDateOfMonth = today.replace(day=1)
-		lastDate = fstDateOfMonth - datetime.timedelta(days=1)
-		firstDate = lastDate.replace(day=1)
-		back10lastDate = lastDate.replace(lastDate.year - 10)
-		back10firstDate = firstDate.replace(firstDate.year - 10)
-		## format dates
-		lastDate = lastDate.strftime("%m-%d-%Y")
-		firstDate = firstDate.strftime("%m-%d-%Y")
-		back10lastDate = back10lastDate.strftime("%m-%d-%Y")
-		back10firstDate = back10firstDate.strftime("%m-%d-%Y")
-
-		print "firstDate: ", firstDate
-		print "lastDate: ", lastDate
-		print "back10firstDate: ", back10firstDate
-		print "back10lastDate: ", back10lastDate
-
-		return firstDate, lastDate, back10firstDate, back10lastDate
+		self.lastDate = fstDateOfMonth - datetime.timedelta(days=1)
+		self.firstDate = self.lastDate.replace(day=1)
+		self.back10lastDate = self.lastDate.replace(self.lastDate.year - 10)
+		self.back10firstDate = self.firstDate.replace(self.firstDate.year - 10)
+		
+		# print "firstDate: ", self.firstDate
+		# print "lastDate: ", self.lastDate
+		# print "back10firstDate: ", self.back10firstDate
+		# print "back10lastDate: ", self.back10lastDate
 
 
 	def compareExcelDates(self):
 		logging.info("comparing dates from excel file ...")
-		excelFile = os.path.join(os.getcwd(), 'compare_file.xlsx')
+		flFormat = self.firstDate.strftime("%b%Y")
+		excelFile = os.path.join(os.getcwd(), 'compare_file_'+flFormat+'_scen_gen.xlsx')
 		
 		for index, row in self.df.iterrows():
 			## dateinprod scendatesgenera
@@ -286,8 +288,8 @@ class AutomateDataAnalysis(object):
 		# self.makeDatabseEntry()
 		# self.generatePcIndxFile()
 		self.populateCDXDelta()		
-		# self.generateCompareFile()
-		# self.compareExcelDates()
+		#self.generateCompareFile()
+		self.compareExcelDates()
 		etime = time.time()
 		ttime = etime - stime		
 		logging.info("********************************************************")
