@@ -7,7 +7,8 @@ import argparse
 import subprocess
 import numpy as np
 import pandas as pd
-from datetime import datetime, timedelta
+import datetime
+#from datetime import datetime, timedelta
 from sqlalchemy import create_engine
 
 
@@ -31,29 +32,6 @@ class AutomateDataAnalysis(object):
 		self.password = 'cybage@123'
 		self.dbname   = 'TestDB'
 		self.port     = '1433'
-
-
-	def getArgument(self):
-		parser = argparse.ArgumentParser()
-
-		parser.add_argument('-f', '--from_date',
-							required=True,
-							dest='from_date',
-							help='Store from/start date')
-
-		parser.add_argument('-t', '--to_date',
-							required=True,
-							dest='to_date',
-							help='Store to/end date')
-
-		parser.add_argument('-v', '--version', 
-							action='version',
-							version='%(prog)s 1.0')
-
-		args = vars(parser.parse_args())
-
-		return args
-		#print args["from_date"]
 
 
 	def readExcelToMakeEntryInDB(self):
@@ -126,14 +104,37 @@ class AutomateDataAnalysis(object):
 			con.close()
 
 
-	def populateCDXDelta(self, from_date, to_date):
-		logging.info("inserting data to table CDX_delta from '{}' to '{}' ...".format(from_date, to_date))
+	def populateCDXDelta(self):
+		firstDate, lastDate, back10firstDate, back10lastDate = self.getDates()
+		logging.info("inserting data to table CDX_delta from '{}' to '{}' ...".format(firstDate, lastDate))
 		try:
 			con, cur = self.getConnection()
-			cur.execute("EXEC dbo.p_populate_CDX_delta @dt_from = '{}', @dt_to = '{}'".format(from_date, to_date))
+			cur.execute("EXEC dbo.p_populate_CDX_delta @dt_from = '{}', @dt_to = '{}'".format(firstDate, lastDate))
 		except Exception as e:
 			logging.error("populateCDXDelta(): unable to populate CDX_delta table, e: {}".format(e))
 		
+
+	def getDates(self):
+		today = datetime.date.today()
+		#today = datetime.now()
+		fstDateOfMonth = today.replace(day=1)
+		lastDate = fstDateOfMonth - datetime.timedelta(days=1)
+		firstDate = lastDate.replace(day=1)
+		back10lastDate = lastDate.replace(lastDate.year - 10)
+		back10firstDate = firstDate.replace(firstDate.year - 10)
+		## format dates
+		lastDate = lastDate.strftime("%m-%d-%Y")
+		firstDate = firstDate.strftime("%m-%d-%Y")
+		back10lastDate = back10lastDate.strftime("%m-%d-%Y")
+		back10firstDate = back10firstDate.strftime("%m-%d-%Y")
+
+		print "firstDate: ", firstDate
+		print "lastDate: ", lastDate
+		print "back10firstDate: ", back10firstDate
+		print "back10lastDate: ", back10lastDate
+
+		return firstDate, lastDate, back10firstDate, back10lastDate
+
 
 	def compareExcelDates(self):
 		logging.info("comparing dates from excel file ...")
@@ -281,15 +282,12 @@ class AutomateDataAnalysis(object):
 		logging.info("starting automate process ...")
 		logging.info("********************************************************")
 		stime = time.time()
-		args = self.getArgument()
-		self.readExcelToMakeEntryInDB()
-		self.makeDatabseEntry()
-		self.generatePcIndxFile()
-		if len(args) > 0:		
-			self.populateCDXDelta(args['from_date'], args['to_date'])
-		
-		self.generateCompareFile()
-		self.compareExcelDates()
+		# self.readExcelToMakeEntryInDB()
+		# self.makeDatabseEntry()
+		# self.generatePcIndxFile()
+		self.populateCDXDelta()		
+		# self.generateCompareFile()
+		# self.compareExcelDates()
 		etime = time.time()
 		ttime = etime - stime		
 		logging.info("********************************************************")
