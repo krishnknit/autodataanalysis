@@ -35,16 +35,19 @@ class AutomateDataAnalysis(object):
 
 
 	def readExcelToMakeEntryInDB(self):
-		logging.info("reading from excel file '{}' started...".format(file))
 		try:			
 			#excelDF = pd.read_excel(os.path.join(path, file), sheetname = "Sheet1")
-			excelDF = pd.read_excel(os.path.join(self.excelPath, 'excel1.xlsx'), sheetname = "Sheet1")
-			logging.info("reading from excel file '{}' completed...".format(file))
-
+			readExlsFileFrmt = 'CDX_excel_'+self.formatDate()+'.xlsx'
+			if os.path.exists(os.path.join(self.excelPath, readExlsFileFrmt)):
+				logging.info("reading from excel file '{}' started...".format(readExlsFileFrmt))
+				excelDF = pd.read_excel(os.path.join(self.excelPath, readExlsFileFrmt), sheetname = "Sheet1")
+			else:
+				logging.error("excel file '{}' not exists ...".format(readExlsFileFrmt))
+			
 			## make database entry by using pandas
 			#self.makeDatabseEntryByPandas(excelDF)
 
-			logging.info("extracting fields from excel file '{}'...".format(file))
+			logging.info("extracting fields from excel file '{}'...".format(readExlsFileFrmt))
 			for index, row in excelDF.iterrows():
 				dt = str(row['dt'])[:10]
 				indx_nm = str(row['indx_nm'])
@@ -53,6 +56,7 @@ class AutomateDataAnalysis(object):
 				create_user_id = str(row['create_user_id'])
 
 				self.rowList.append((dt, indx_nm, indx_val, create_ts, create_user_id))
+			logging.info("reading from excel file '{}' completed...".format(readExlsFileFrmt))
 		except Exception as e:
 			logging.error("readExcelToMakeEntryInDB(), e: {}".format(e))
 
@@ -109,10 +113,10 @@ class AutomateDataAnalysis(object):
 		self.getDates()
 
 		## format dates
-		plastDate = self.lastDate.strftime("%m-%d-%Y")
-		pfirstDate = self.firstDate.strftime("%m-%d-%Y")
-		pback10lastDate = self.back10lastDate.strftime("%m-%d-%Y")
-		pback10firstDate = self.back10firstDate.strftime("%m-%d-%Y")
+		plastDate = self.lastDate.strftime(self.date_format)
+		pfirstDate = self.firstDate.strftime(self.date_format)
+		pback10lastDate = self.back10lastDate.strftime(self.date_format)
+		pback10firstDate = self.back10firstDate.strftime(self.date_format)
 
 		logging.info("inserting data to table CDX_delta from '{}' to '{}' ...".format(pfirstDate, plastDate))
 		try:
@@ -137,49 +141,55 @@ class AutomateDataAnalysis(object):
 		# print "back10lastDate: ", self.back10lastDate
 
 
+	def formatDate(self):
+		return self.firstDate.strftime("%b%Y")
+
+
 	def compareExcelDates(self):
-		logging.info("comparing dates from excel file ...")
-		flFormat = self.firstDate.strftime("%b%Y")
-		excelFile = os.path.join(os.getcwd(), 'compare_file_'+flFormat+'_scen_gen.xlsx')
+		compfile = 'compare_file_'+ self.formatDate() +'_scen_gen.xlsx'
+		compExcelFile = os.path.join(os.getcwd(), compfile)
+		logging.info("comparision of dates from excel file {} started ...".format(compfile))
 		
-		for index, row in self.df.iterrows():
-			## dateinprod scendatesgenera
-			if any(self.df.scendatesgenera == row['dateinprod']):
-				self.existinprod.append('Exists')
-				self.datestatus.append('NA')
-			else:
-				self.existinprod.append('Not Exists')
-				dt = str(row['dateinprod'])[:10]
-				now = str(datetime.now())[:10]
-				nowdate = datetime.strptime(now, self.date_format)
-				back10ydate = datetime.strptime(dt, self.date_format)
-				delta = nowdate - back10ydate
-				
-
-				if (delta.days > self.days10yrs):
-					self.datestatus.append('Legacy')
-				elif (delta.days <= self.days10yrs and delta.days > 0):
-					self.datestatus.append('Retired')
-				else:
+		try:
+			for index, row in self.df.iterrows():
+				## dateinprod scendatesgenera
+				if any(self.df.scendatesgenera == row['dateinprod']):
+					self.existinprod.append('Exists')
 					self.datestatus.append('NA')
+				else:
+					self.existinprod.append('Not Exists')
+					dt = str(row['dateinprod'])[:10]
+					now = str(datetime.now())[:10]
+					nowdate = datetime.strptime(now, self.date_format)
+					back10ydate = datetime.strptime(dt, self.date_format)
+					delta = nowdate - back10ydate					
 
-			if any(self.df.dateinprod == row['scendatesgenera']):
-				self.notexistinprod.append('Exists')
-				self.newdates.append('NA')
-				self.topRank.append('NA')
-				self.bottomRank.append('NA')
-			else:
-				self.notexistinprod.append('Not Exists')
-				self.newdates.append('Newdate')
+					if (delta.days > self.days10yrs):
+						self.datestatus.append('Legacy')
+					elif (delta.days <= self.days10yrs and delta.days > 0):
+						self.datestatus.append('Retired')
+					else:
+						self.datestatus.append('NA')
 
-				## get rank for new date
-				rfrmTop, rfrmBottom = self.getRank(row['dateinprod'])
-				self.topRank.append(rfrmTop)
-				self.bottomRank.append(rfrmBottom)
+				if any(self.df.dateinprod == row['scendatesgenera']):
+					self.notexistinprod.append('Exists')
+					self.newdates.append('NA')
+					self.topRank.append('NA')
+					self.bottomRank.append('NA')
+				else:
+					self.notexistinprod.append('Not Exists')
+					self.newdates.append('Newdate')
+
+					## get rank for new date
+					rfrmTop, rfrmBottom = self.getRank(row['dateinprod'])
+					self.topRank.append(rfrmTop)
+					self.bottomRank.append(rfrmBottom)
+		except Exception as e:
+			logging.error("compareExcelDates(), e: {}".format(e))
 
 		## format dateinprod & scendatesgenera
-		self.df['dateinprod'] = self.df['dateinprod'].dt.strftime('%m/%d/%Y')
-		self.df['scendatesgenera'] = self.df['scendatesgenera'].dt.strftime('%m/%d/%Y')
+		self.df['dateinprod'] = self.df['dateinprod'].dt.strftime(self.date_format)
+		self.df['scendatesgenera'] = self.df['scendatesgenera'].dt.strftime(self.date_format)
 
 		## update df with new fields
 		self.df['existinprod'] = self.existinprod
@@ -191,13 +201,13 @@ class AutomateDataAnalysis(object):
 
 		## write to excel file
 		try:
-			writer = pd.ExcelWriter(excelFile, engine='xlsxwriter', date_format='mmm/dd/yyyy')
+			writer = pd.ExcelWriter(compExcelFile, engine='xlsxwriter')
 			self.df.to_excel(writer, sheet_name='Sheet1', index=False)
 			writer.save()
 		except Exception as e:
 			logging.error("compareExcelDates(): unable to write excel file, e: {}".format(e))
 		else:
-			logging.info("dates comparision has completed ...")
+			logging.info("dates comparision from excel file '{}'' has completed ...".format(compfile))
 
 
 	def readIndexFile(self):
@@ -284,11 +294,11 @@ class AutomateDataAnalysis(object):
 		logging.info("starting automate process ...")
 		logging.info("********************************************************")
 		stime = time.time()
-		# self.readExcelToMakeEntryInDB()
-		# self.makeDatabseEntry()
-		# self.generatePcIndxFile()
+		self.readExcelToMakeEntryInDB()
+		self.makeDatabseEntry()
+		self.generatePcIndxFile()
 		self.populateCDXDelta()		
-		#self.generateCompareFile()
+		self.generateCompareFile()
 		self.compareExcelDates()
 		etime = time.time()
 		ttime = etime - stime		
