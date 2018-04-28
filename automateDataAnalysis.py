@@ -3,12 +3,11 @@ import os
 import time
 import pymssql
 import logging
+import datetime
 import argparse
 import subprocess
 import numpy as np
 import pandas as pd
-import datetime
-#from datetime import datetime, timedelta
 from sqlalchemy import create_engine
 
 
@@ -25,6 +24,9 @@ class AutomateDataAnalysis(object):
 		self.newdates = []
 		self.topRank = []
 		self.bottomRank = []
+
+		## set dates
+		self.getDates()
 		
 		## credentials
 		self.hostname = 'localhost'
@@ -82,7 +84,11 @@ class AutomateDataAnalysis(object):
 
 
 	def getSecondColFrmPcFile(self):
-		genPcFile = os.path.join(self.excelPath, 'april_pcfile.xlsx')
+		## get pc file
+		pcfile = "rsubA_PC_{}.xlsx".format(self.formatPcIndxFile())
+		genPcFile = os.path.join(self.excelPath, pcfile)
+
+		## read pc file
 		self.genPcDf = pd.read_excel(genPcFile, sheetname = "Sheet1")
 		
 		self.genPcDf.reset_index(inplace = True)
@@ -97,6 +103,11 @@ class AutomateDataAnalysis(object):
 
 		## Excute Query here
 		sql = "SELECT dt FROM CDX"
+		# sql = """SELECT a.scenario_dt, key_dt 
+		# 		 FROM suba_st_scenarios_active_sets a 
+		# 		 WHERE a.key_dt = 
+		# 		 (SELECT MAX(key_dt) FROM suba_st_scenarios_active_sets b
+		# 		 WHERE b.key_dt <= '{}'""".format(self.today.strftime("%Y%m%d"))
 		
 		try:
 			self.df['dateinprod'] = pd.read_sql(sql, con)
@@ -109,9 +120,6 @@ class AutomateDataAnalysis(object):
 
 
 	def populateCDXDelta(self):
-		## get dates
-		self.getDates()
-
 		## format dates
 		plastDate = self.lastDate.strftime(self.date_format)
 		pfirstDate = self.firstDate.strftime(self.date_format)
@@ -127,26 +135,25 @@ class AutomateDataAnalysis(object):
 		
 
 	def getDates(self):
-		today = datetime.date.today()
+		self.today = datetime.date.today()
 		#today = datetime.now()
-		fstDateOfMonth = today.replace(day=1)
+		fstDateOfMonth = self.today.replace(day=1)
 		self.lastDate = fstDateOfMonth - datetime.timedelta(days=1)
 		self.firstDate = self.lastDate.replace(day=1)
 		self.back10lastDate = self.lastDate.replace(self.lastDate.year - 10)
 		self.back10firstDate = self.firstDate.replace(self.firstDate.year - 10)
-		
-		# print "firstDate: ", self.firstDate
-		# print "lastDate: ", self.lastDate
-		# print "back10firstDate: ", self.back10firstDate
-		# print "back10lastDate: ", self.back10lastDate
 
 
-	def formatDate(self):
+	def formatCompFile(self):
 		return self.firstDate.strftime("%b%Y")
 
 
+	def formatPcIndxFile(self):
+		return self.lastDate.strftime("%Y%m%d")
+
+
 	def compareExcelDates(self):
-		compfile = 'compare_file_'+ self.formatDate() +'_scen_gen.xlsx'
+		compfile = 'compare_file_'+ self.formatCompFile() +'_scen_gen.xlsx'
 		compExcelFile = os.path.join(os.getcwd(), compfile)
 		logging.info("comparision of dates from excel file {} started ...".format(compfile))
 		
@@ -158,15 +165,11 @@ class AutomateDataAnalysis(object):
 					self.datestatus.append('NA')
 				else:
 					self.existinprod.append('Not Exists')
-					dt = str(row['dateinprod'])[:10]
-					now = str(datetime.now())[:10]
-					nowdate = datetime.strptime(now, self.date_format)
-					back10ydate = datetime.strptime(dt, self.date_format)
-					delta = nowdate - back10ydate					
 
-					if (delta.days > self.days10yrs):
+					prodDate = row['dateinprod'].date()
+					if (prodDate > self.back10lastDate):
 						self.datestatus.append('Legacy')
-					elif (delta.days <= self.days10yrs and delta.days > 0):
+					elif (prodDate <= self.back10lastDate and prodDate >= self.lastDate):
 						self.datestatus.append('Retired')
 					else:
 						self.datestatus.append('NA')
@@ -211,7 +214,11 @@ class AutomateDataAnalysis(object):
 
 
 	def readIndexFile(self):
-		genIndxFile = os.path.join(self.excelPath, 'april_indx_file.xlsx')
+		## format index file
+		indxfile = "rsubA_INDX_{}.xlsx".format(self.formatPcIndxFile())
+		genIndxFile = os.path.join(self.excelPath, indxfile)
+
+		## read index file
 		genIndxDf = pd.read_excel(genIndxFile, sheetname = "Sheet1", parse_dates=False, convert_float=False)
 		
 		genIndxDf.reset_index(inplace = True)
@@ -224,6 +231,7 @@ class AutomateDataAnalysis(object):
 		## read index file
 		genIndxDf = self.readIndexFile()
 		newDate = str(newDate)[:10] 
+
 		try:
 			driSeries = genIndxDf.loc[genIndxDf['date'] == str(newDate), 'driver']
 			driver = driSeries.values[0]
