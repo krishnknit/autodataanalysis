@@ -67,7 +67,23 @@ class AutomateDataAnalysis(object):
 		rwrapper = os.path.join(self.excelPath, 'rscriptWrapper.py')
 
 		try:
-			subprocess.check_call(['python', rwrapper], shell = False)
+			homeDir = os.environ.get("HOME", "C:\Program Files\R\R-3.2.2\bin")
+			rscriptFile = os.path.join(homeDir, "RScript.exe")
+			process = subprocess.Popen(['Rscript', rscriptFile], shell = False, stdout=subprocess.PIPE)
+			
+			def check_io():
+				while True:
+					output = process.stdout.readline().decode()
+					if output:
+						logging.info('line from subprocess: %r', output)
+						#logger.log(logging.INFO, output)
+					else:
+						break
+
+			# keep checking stdout/stderr until the child exits
+			while process.poll() is None:
+				check_io()
+
 		except Exception as e:
 			logging.error("generatePcIndxFile(): unable to run R script, e: {}".format(e))
 		
