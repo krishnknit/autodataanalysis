@@ -37,8 +37,8 @@ class AutomateDataAnalysis(object):
 
 
 	def readExcelToMakeEntryInDB(self):
-		try:			
-			#excelDF = pd.read_excel(os.path.join(path, file), sheetname = "Sheet1")
+		try:
+			## file name: CDX_excel_Apr2018.xlsx
 			readExlsFileFrmt = 'CDX_excel_'+self.formatDate()+'.xlsx'
 			if os.path.exists(os.path.join(self.excelPath, readExlsFileFrmt)):
 				logging.info("reading from excel file '{}' started...".format(readExlsFileFrmt))
@@ -167,7 +167,7 @@ class AutomateDataAnalysis(object):
 		self.back10firstDate = self.firstDate.replace(self.firstDate.year - 10)
 
 
-	def formatCompFile(self):
+	def formatDate(self):
 		return self.firstDate.strftime("%b%Y")
 
 
@@ -176,7 +176,7 @@ class AutomateDataAnalysis(object):
 
 
 	def compareExcelDates(self):
-		compfile = 'compare_file_'+ self.formatCompFile() +'_scen_gen.xlsx'
+		compfile = 'compare_file_'+ self.formatDate() +'_scen_gen.xlsx'
 		compExcelFile = os.path.join(os.getcwd(), compfile)
 		logging.info("comparision of dates from excel file {} started ...".format(compfile))
 		
